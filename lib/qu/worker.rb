@@ -11,6 +11,7 @@ module Qu
       @queues = queues.flatten
       self.attributes = @queues.pop if @queues.last.is_a?(Hash)
       @queues << 'default' if @queues.empty?
+      @started = false
     end
 
     def attributes=(attrs)
@@ -28,7 +29,11 @@ module Qu
       %W(INT TERM).each do |sig|
         trap(sig) do
           logger.info "Worker #{id} received #{sig}, shutting down"
-          raise Abort
+          if Qu.clean_shutdown
+            stop
+          else
+            raise Abort
+          end
         end
       end
     end
@@ -51,15 +56,24 @@ module Qu
     end
 
     def start
+      return if @started
+      @started = true
+      
       logger.warn "Worker #{id} starting"
       handle_signals
       Qu.backend.register_worker(self)
-      loop { work }
-    rescue Abort => e
-      # Ok, we'll shut down, but give us a sec
+      loop do
+        break unless @started
+        work
+      end
     ensure
       Qu.backend.unregister_worker(self)
       logger.debug "Worker #{id} done"
+      @started = false
+    end
+    
+    def stop
+      @started = false
     end
 
     def id

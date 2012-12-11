@@ -43,14 +43,33 @@ describe Qu::Worker do
       Qu.backend.should_receive(:register_worker).with(subject)
       subject.start
     end
-
+  end
+  
+  describe 'stop' do
+    before do
+      subject.stub(:work) { Process.kill('SIGTERM', $$) }
+    end
+    
     context 'when aborting' do
       before do
-        subject.stub(:loop).and_raise(Qu::Worker::Abort)
+        Qu.clean_shutdown = false
       end
 
       it 'should unregister worker' do
         Qu.backend.should_receive(:unregister_worker).with(subject)
+        
+        expect { subject.start }.to raise_exception(Qu::Worker::Abort)
+      end
+    end
+    
+    context 'when stopping' do
+      before do
+        Qu.clean_shutdown = true
+      end
+      
+      it 'should shut down cleanly and unregister worker' do
+        Qu.backend.should_receive(:unregister_worker).with(subject)
+        
         subject.start
       end
     end
