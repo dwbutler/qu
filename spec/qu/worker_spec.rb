@@ -47,7 +47,11 @@ describe Qu::Worker do
   
   describe 'stop' do
     before do
-      subject.stub(:work) { Process.kill('SIGTERM', $$) }
+      job.stub(:perform) do
+        Process.kill('SIGTERM', $$)
+        sleep(0.01)
+      end
+      Qu.stub!(:reserve).and_return(job)
     end
     
     context 'when aborting' do
@@ -67,10 +71,22 @@ describe Qu::Worker do
         Qu.clean_shutdown = true
       end
       
-      it 'should shut down cleanly and unregister worker' do
+      it 'should wait for the job to finish, shut down cleanly, and unregister worker' do
         Qu.backend.should_receive(:unregister_worker).with(subject)
         
         subject.start
+      end
+      
+      it 'should abort if the worker is blocked waiting for a new job' do
+        Qu.backend.should_receive(:unregister_worker).with(subject)
+        Qu.stub(:reserve) { sleep }
+        
+        t = Thread.new do
+          sleep(0.01)
+          Process.kill('SIGTERM', $$)
+        end
+        
+        expect { subject.start }.to raise_exception(Qu::Worker::Abort)
       end
     end
   end
